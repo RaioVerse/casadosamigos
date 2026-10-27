@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="pt-BR"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Casa dos Parças</title>
+<style>
+:root{--bg:#0b241d;--c:#123a2e;--c2:#1d4f3f;--t:#f3ecd9;--m:#9bb5a8;--g:#e3b95a;--ok:#5be08f;--no:#ff7a7a}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--t);font:16px system-ui,sans-serif}
+h1,h2{font-family:Georgia,serif;margin:.4em 0}
+#app{max-width:640px;margin:auto;padding:12px}
+header{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:10px}
+.b{background:var(--c2);color:var(--t);border:0;border-radius:10px;padding:11px 14px;font:inherit;cursor:pointer}
+.b:active{transform:scale(.97)}
+.b:focus-visible,input:focus-visible{outline:2px solid var(--g)}
+.go{background:var(--g);color:#2a2008;font-weight:700;width:100%;margin:10px 0}
+.sel{outline:2px solid var(--g)}
+.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+.card{background:var(--c);border-radius:14px;padding:16px 10px;text-align:center;cursor:pointer;font-family:Georgia,serif}
+.card span{font-size:32px;display:block;margin-bottom:4px}
+.row{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}.row>*{flex:1}
+input{background:var(--c);border:1px solid var(--c2);color:var(--t);border-radius:10px;padding:11px;font:inherit;width:100%}
+.tabs{display:flex;gap:6px;margin-bottom:12px}.tabs .b{flex:1;padding:9px 2px;font-size:14px}
+.big{font-size:48px;text-align:center;font-weight:800;margin:14px 0;font-family:Georgia,serif}
+.g5{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}.g5 .b{aspect-ratio:1;padding:0;font-size:22px}
+.res{text-align:center;padding:14px;border-radius:12px;background:var(--c);margin-top:8px}
+.win{color:var(--ok)}.lose{color:var(--no)}
+.box{background:var(--c);border-radius:12px;padding:12px;margin-bottom:10px}
+small{color:var(--m)}
+</style></head><body>
+<div id="app"></div>
+<script>
+/* ===== CONFIGURAÇÃO =====
+ 1) Crie um projeto grátis em console.firebase.google.com
+ 2) Authentication > Método de login > ative "E-mail/senha"
+ 3) Firestore Database > criar banco > aba Regras, cole:
+    rules_version='2';service cloud.firestore{match /databases/{d}/documents{match /{doc=**}{allow read,write: if request.auth!=null;}}}
+ 4) Configurações do projeto > Seus apps > Web (</>) > copie o firebaseConfig abaixo
+ Enquanto CFG for null, roda em MODO TESTE (só neste navegador). */
+const CFG=null; // ex: {apiKey:"...",authDomain:"...",projectId:"...",appId:"..."}
+const ADMINS=["seunome"]; // usuários que criam/encerram mercados de apostas
+/* ======================== */
+
+const $=s=>document.querySelector(s),R=()=>crypto.getRandomValues(new Uint32Array(1))[0]/4294967296,ri=n=>Math.floor(R()*n),f=n=>'🪙'+Math.round(n).toLocaleString('pt-BR');
+let S,F={},cur,st={},tab_='g';
+const out=h=>{$('#out').innerHTML=h},msg=t=>alert(t);
+const res=(n,t='')=>out(`<div class="res ${n>0?'win':n<0?'lose':''}">${t}<br><b>${n>0?'🎉 +'+f(n):n<0?'😬 '+f(n):'Devolvido'}</b></div>`);
+const RED=[1,3,5,7,9,12,14,16,18,19,21,23,25,27,30,32,34,36];
+
+/* ---------- JOGOS DE RODADA ÚNICA: p(opção) => {m: multiplicador, t: texto} ---------- */
+const G={
+coin:{n:'Cara ou Coroa',i:'🪙',o:['Cara','Coroa'],p(a){const r=ri(2);return{m:a==r?1.96:0,t:r?'Coroa':'Cara'}}},
+dice:{n:'Dado 1-100',i:'🎲',o:['25% x3.8','50% x1.9','75% x1.26'],p(a){const c=[25,50,75][a],r=1+ri(100);return{m:r<=c?[3.8,1.9,1.26][a]:0,t:`Saiu ${r} (precisava ≤ ${c})`}}},
+dice2:{n:'Soma de Dados',i:'🎯',o:['Baixa 2-6 x2.2','Sete x5.5','Alta 8-12 x2.2'],p(a){const x=1+ri(6),y=1+ri(6),s=x+y,w=[s<7,s==7,s>7][a];return{m:w?[2.2,5.5,2.2][a]:0,t:`🎲${x} 🎲${y} = ${s}`}}},
+roulette:{n:'Roleta',i:'🎡',o:['🔴 Vermelho','⚫ Preto','Par','Ímpar','🟢 Zero x36'],p(a){const n=ri(37),w=[RED.includes(n),n>0&&!RED.includes(n),n>0&&n%2==0,n%2==1,n==0][a];return{m:w?(a==4?36:2):0,t:'Caiu '+n}}},
+slots:{n:'Caça-níquel',i:'🍒',p(){const s=['🍒','🍋','🔔','⭐','💎','7️⃣'],M=[8,10,12,15,18,22],r=[ri(6),ri(6),ri(6)],u=new Set(r).size;return{m:u==1?M[r[0]]:u==2?1.35:0,t:r.map(i=>s[i]).join(' ')+(u==2?'<br>Par! x1.35':u==1?'<br>Trinca!':'')}}},
+scratch:{n:'Raspadinha',i:'🎟️',p(){const r=R(),m=r<.55?0:r<.8?1.5:r<.92?2:r<.98?3:5;return{m,t:m?'Prêmio x'+m:'Nada dessa vez'}}},
+wheel:{n:'Roda da Sorte',i:'🎪',p(){const m=[0,0,0,0,0,0,.5,1,1.5,2,2.5,3][ri(12)];return{m,t:'A roda parou em x'+m}}},
+horses:{n:'Corrida de Cavalos',i:'🏇',o:['🐴 1','🐎 2','🏇 3','🦄 4','🐪 5'],p(a){const w=ri(5);return{m:a==w?4.6:0,t:'Venceu o cavalo '+(w+1)}}},
+hilo:{n:'Maior ou Menor',i:'🃏',o:['Maior','Menor'],p(a){const x=1+ri(13),y=1+ri(13);return{m:(a?y<x:y>x)?2:0,t:`Carta ${x} → ${y}`}}},
+war:{n:'Guerra de Cartas',i:'⚔️',p(){const x=1+ri(13),y=1+ri(13);return{m:x>y?2:0,t:`Você ${x} × ${y} Dealer`+(x==y?' (empate perde)':'')}}},
+plinko:{n:'Plinko',i:'🔻',p(){let k=0,t='';for(let i=0;i<8;i++){const b=ri(2);k+=b;t+=b?'↘':'↙'}const M=[8,3,1.4,.6,.4,.6,1.4,3,8];return{m:M[k],t:t+'<br>Caiu em x'+M[k]}}},
+
+/* ---------- JOGOS COM VÁRIAS ETAPAS ---------- */
+crash:{n:'Crash',i:'🚀',ui(){shell(G.crash,`<div class="big" id="cm">1.00x</div><button class="b go" id="cb" onclick="crashGo()">Apostar</button>`)}},
+mines:{n:'Mines',i:'💣',ui(){shell(G.mines,`<div class="g5" id="mg"></div><button class="b go" id="mb" onclick="minesGo()">Apostar</button>`);mdraw()}},
+tower:{n:'Torre',i:'🗼',ui(){shell(G.tower,`<div class="big" id="tm">Nível 0/8</div><div class="row" id="tt"></div><button class="b go" id="tb" onclick="towerGo()">Apostar</button>`)}},
+blackjack:{n:'Blackjack',i:'🂡',ui(){shell(G.blackjack,`<div id="bj" class="box">Aposte e dê as cartas.</div><div class="row" id="bk"><button class="b go" onclick="bjStart()">Dar cartas</button></div>`)}}
+};
+
+/* ---------- INFRA ---------- */
+async function initFB(){const B='https://www.gstatic.com/firebasejs/10.12.2/',[a,u,d]=await Promise.all([import(B+'firebase-app.js'),import(B+'firebase-auth.js'),import(B+'firebase-firestore.js')]);const app=a.initializeApp(CFG);F={u,d,auth:u.getAuth(app),db:d.getFirestore(app)}}
+function start(id,d){if(S&&S.id==id)return;S={id,...d};if(F.db)F.un=F.d.onSnapshot(F.d.doc(F.db,'users',id),x=>{if(x.exists()){S.bal=x.data().bal;head()}});lobby()}
+async function add(d){S.bal+=d;head();if(F.db)F.d.updateDoc(F.d.doc(F.db,'users',S.id),{bal:F.d.increment(d)});else{const U=JSON.parse(localStorage.casa);U[S.id].bal=S.bal;localStorage.casa=JSON.stringify(U)}}
+async function auth(sign){
+ const n=$('#un').value.trim().toLowerCase().replace(/[^a-z0-9_]/g,''),p=$('#pw').value;
+ if(n.length<3||p.length<6)return msg('Usuário: 3+ letras/números. Senha: 6+ caracteres.');
+ try{
+  if(F.db){const em=n+'@casa.app';
+   if(sign){const c=await F.u.createUserWithEmailAndPassword(F.auth,em,p);await F.d.setDoc(F.d.doc(F.db,'users',c.user.uid),{name:n,bal:1000});start(c.user.uid,{name:n,bal:1000})}
+   else await F.u.signInWithEmailAndPassword(F.auth,em,p);
+  }else{const U=JSON.parse(localStorage.casa||'{}');
+   if(sign){if(U[n])return msg('Esse usuário já existe.');U[n]={p:btoa(p),bal:1000}}
+   else if(!U[n]||U[n].p!==btoa(p))return msg('Usuário ou senha incorretos.');
+   localStorage.casa=JSON.stringify(U);sessionStorage.u=n;start(n,{name:n,bal:U[n].bal})}
+ }catch(e){msg('Erro: '+(e.code||e.message))}
+}
+function logout(){F.un&&F.un();S=null;if(F.db)F.u.signOut(F.auth);else{sessionStorage.clear();authView()}}
+function authView(){$('#app').innerHTML=`<h1>🎰 Casa dos Parças</h1><p><small>${F.db?'Moeda fictícia · só diversão':'⚠️ Modo teste: dados só neste navegador'}</small></p><input id="un" placeholder="Usuário" autocapitalize="none"><br><br><input id="pw" type="password" placeholder="Senha (6+ caracteres)"><div class="row"><button class="b" onclick="auth(0)">Entrar</button><button class="b" style="background:var(--g);color:#2a2008" onclick="auth(1)">Criar conta (🪙1.000)</button></div>`}
+function head(){const h=$('#hd');if(h)h.innerHTML=`<b>👤 ${S.name}</b><b style="color:var(--g)">${f(S.bal)}</b>${S.bal<50?'<button class="b" onclick="add(500)">🆘 +500</button>':''}<button class="b" onclick="logout()">Sair</button>`}
+function lobby(){clearInterval(st.iv);st={};$('#app').innerHTML=`<header id="hd"></header><div class="tabs">${[['g','🎮 Jogos'],['m','📊 Mercado'],['d','⚔️ Duelos'],['r','🏆 Rank']].map(([k,l])=>`<button class="b ${k==tab_?'sel':''}" onclick="tab_='${k}';lobby()">${l}</button>`).join('')}</div><div id="main"></div>`;head();({g:games,m:market,d:duels,r:rank})[tab_]()}
+function games(){$('#main').innerHTML=`<div class="grid">${Object.entries(G).map(([k,g])=>`<div class="card" onclick="openG('${k}')"><span>${g.i}</span>${g.n}</div>`).join('')}</div>`}
+const shell=(g,h)=>{$('#main').innerHTML=`<button class="b" onclick="lobby()">← Voltar</button><h2>${g.i} ${g.n}</h2><div class="row"><input id="bet" type="number" inputmode="numeric" value="100"><button class="b" onclick="bm(.5)">½</button><button class="b" onclick="bm(2)">2×</button><button class="b" onclick="bm(0)">Tudo</button></div>${h}<div id="out"></div>`};
+const bm=x=>{const v=+$('#bet').value;$('#bet').value=x?Math.max(1,Math.floor(v*x)):Math.floor(S.bal)};
+function bet(){const a=Math.floor(+$('#bet').value);if(!(a>=1)||a>S.bal){msg('Aposta inválida ou saldo insuficiente.');return 0}return a}
+function openG(k){cur=k;st={a:0};const g=G[k];g.ui?g.ui():shell(g,`${g.o?`<div class="row">${g.o.map((x,i)=>`<button class="b ${i?'':'sel'}" onclick="pick(${i},this)">${x}</button>`).join('')}</div>`:''}<button class="b go" onclick="play()">Jogar</button>`)}
+function pick(i,el){st.a=i;el.parentNode.querySelectorAll('.b').forEach(b=>b.classList.remove('sel'));el.classList.add('sel')}
+async function play(){const a=bet();if(!a)return;const r=G[cur].p(st.a),w=Math.round(a*r.m);await add(-a);if(w)await add(w);res(w-a,r.t)}
+
+/* ---------- CRASH ---------- */
+async function crashGo(){
+ if(st.run){clearInterval(st.iv);st.run=0;const w=Math.round(st.a*st.m);await add(w);$('#cb').textContent='Apostar';return res(w-st.a,'Sacou em '+st.m.toFixed(2)+'x')}
+ const a=bet();if(!a)return;await add(-a);st={run:1,a,m:1,c:Math.max(1,.96/(1-R())),t:0};$('#cb').textContent='💰 Sacar!';out('');
+ st.iv=setInterval(()=>{st.t+=.1;st.m=Math.exp(.2*st.t);if(st.m>=st.c){clearInterval(st.iv);st.run=0;$('#cm').textContent=st.c.toFixed(2)+'x 💥';$('#cb').textContent='Apostar';res(-a,'Crashou!')}else $('#cm').textContent=st.m.toFixed(2)+'x'},100)}
+
+/* ---------- MINES (5x5, 3 minas) ---------- */
+const mm=k=>{let m=.97;for(let i=0;i<k;i++)m*=(25-i)/(22-i);return m};
+function mdraw(sh){$('#mg').innerHTML=[...Array(25)].map((_,i)=>`<button class="b" ${st.run?`onclick="mp(${i})"`:''}>${st.op?.has(i)?'💎':sh&&st.mn?.has(i)?'💣':'❔'}</button>`).join('')}
+async function minesGo(){
+ if(st.run){if(!st.k)return msg('Abra pelo menos 1 casa.');const w=Math.round(st.a*mm(st.k));st.run=0;await add(w);mdraw(1);$('#mb').textContent='Apostar';return res(w-st.a,'Sacou x'+mm(st.k).toFixed(2))}
+ const a=bet();if(!a)return;await add(-a);const mn=new Set;while(mn.size<3)mn.add(ri(25));st={run:1,a,k:0,mn,op:new Set};mdraw();$('#mb').textContent='💰 Sacar x1.00';out('')}
+async function mp(i){if(!st.run||st.op.has(i))return;if(st.mn.has(i)){st.run=0;mdraw(1);$('#mb').textContent='Apostar';return res(-st.a,'💥 Mina!')}
+ st.op.add(i);st.k++;mdraw();$('#mb').textContent='💰 Sacar x'+mm(st.k).toFixed(2);if(st.k==22)minesGo()}
+
+/* ---------- TORRE (8 níveis, 1 bomba em 3 portas) ---------- */
+function tdraw(){$('#tm').textContent=`Nível ${st.l||0}/8 · x${(1.45**(st.l||0)).toFixed(2)}`;$('#tt').innerHTML=st.run?'<button class="b" onclick="tp()">🚪</button>'.repeat(3):'';$('#tb').textContent=st.run?'💰 Sacar':'Apostar'}
+async function towerGo(){
+ if(st.run){if(!st.l)return msg('Passe pelo menos 1 nível.');const w=Math.round(st.a*1.45**st.l);st.run=0;await add(w);tdraw();return res(w-st.a,'Sacou no nível '+st.l)}
+ const a=bet();if(!a)return;await add(-a);st={run:1,a,l:0};out('');tdraw()}
+async function tp(){if(!st.run)return;if(!ri(3)){st.run=0;tdraw();return res(-st.a,'💥 Bomba!')}st.l++;if(st.l==8)towerGo();else tdraw()}
+
+/* ---------- BLACKJACK ---------- */
+const rk=c=>['A',2,3,4,5,6,7,8,9,10,'J','Q','K'][c-1];
+const bv=h=>{let s=h.reduce((a,c)=>a+(c==1?11:Math.min(c,10)),0),n=h.filter(c=>c==1).length;while(s>21&&n--)s-=10;return s};
+function bjDraw(show){$('#bj').innerHTML=`Dealer: ${show?st.d.map(rk).join(' ')+' ('+bv(st.d)+')':rk(st.d[0])+' 🂠'}<br><br>Você: ${st.p.map(rk).join(' ')} (${bv(st.p)})`}
+async function bjStart(){const a=bet();if(!a)return;await add(-a);const c=()=>1+ri(13);st={a,p:[c(),c()],d:[c(),c()],c};out('');$('#bk').innerHTML=`<button class="b" onclick="bjHit()">Pedir</button><button class="b" onclick="bjStand()">Parar</button>`;bjDraw();if(bv(st.p)==21)bjStand()}
+function bjHit(){st.p.push(st.c());if(bv(st.p)>21)bjEnd(0,'Estourou!');else bjDraw()}
+function bjStand(){while(bv(st.d)<17)st.d.push(st.c());const p=bv(st.p),d=bv(st.d);bjEnd(d>21||p>d?(p==21&&st.p.length==2?2.5:2):p==d?1:0,d>21?'Dealer estourou!':'')}
+async function bjEnd(m,t){bjDraw(1);$('#bk').innerHTML=`<button class="b go" onclick="bjStart()">Nova rodada</button>`;const w=Math.round(st.a*m);if(w)await add(w);res(w-st.a,t)}
+
+/* ---------- MERCADO (apostas entre amigos, admin define o vencedor) ---------- */
+const needFB=()=>{if(!F.db){$('#main').innerHTML='<div class="box">Precisa do Firebase configurado (veja o topo do arquivo).</div>';return 1}};
+async function market(){if(needFB())return;const D=F.d,L=(await D.getDocs(D.collection(F.db,'mkts'))).docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>b.ts-a.ts),A=ADMINS.includes(S.name);st.L=L;
+ $('#main').innerHTML=(A?`<div class="box"><input id="mq" placeholder="Pergunta (ex: Quem ganha o jogo?)"><br><br><input id="mo" placeholder="Opções separadas por vírgula"><button class="b go" onclick="mNew()">Criar mercado</button></div>`:'')+(L.map((m,j)=>{const tot=m.bets.reduce((a,b)=>a+b.a,0);return `<div class="box"><b>${m.q}</b> ${m.open?'':'<small>(venceu: '+m.o[m.w]+')</small>'}<br><small>Pool: ${f(tot)}</small>${m.o.map((o,i)=>{const p=m.bets.filter(b=>b.i==i).reduce((a,b)=>a+b.a,0);return `<div class="row"><button class="b" ${m.open?`onclick="mBet(${j},${i})"`:''}>${o} · ${p?'x'+(tot/p).toFixed(2):'—'}</button>${m.open&&A?`<button class="b" style="flex:0" onclick="mRes(${j},${i})">🏁</button>`:''}</div>`}).join('')}</div>`}).join('')||'<div class="box">Nenhum mercado ainda.</div>')}
+async function mNew(){const q=$('#mq').value.trim(),o=$('#mo').value.split(',').map(x=>x.trim()).filter(Boolean);if(!q||o.length<2)return msg('Pergunta e 2+ opções.');await F.d.addDoc(F.d.collection(F.db,'mkts'),{q,o,bets:[],open:true,ts:Date.now()});market()}
+async function mBet(j,i){const a=Math.floor(+prompt('Quanto apostar?','100'));if(!(a>=1)||a>S.bal)return msg('Valor inválido.');await add(-a);await F.d.updateDoc(F.d.doc(F.db,'mkts',st.L[j].id),{bets:F.d.arrayUnion({id:S.id,u:S.name,i,a,t:Date.now()})});market()}
+async function mRes(j,w){if(!confirm('Encerrar com essa opção vencedora?'))return;const r=F.d.doc(F.db,'mkts',st.L[j].id),m=(await F.d.getDoc(r)).data(),tot=m.bets.reduce((a,b)=>a+b.a,0),wp=m.bets.filter(b=>b.i==w).reduce((a,b)=>a+b.a,0),P={};
+ m.bets.forEach(b=>{if(!wp)P[b.id]=(P[b.id]||0)+b.a;else if(b.i==w)P[b.id]=(P[b.id]||0)+Math.floor(b.a*tot/wp)});
+ for(const u in P)await F.d.updateDoc(F.d.doc(F.db,'users',u),{bal:F.d.increment(P[u])});
+ await F.d.updateDoc(r,{open:false,w});market()}
+
+/* ---------- DUELOS (cara ou coroa 1v1) ---------- */
+async function duels(){if(needFB())return;const D=F.d,L=(await D.getDocs(D.query(D.collection(F.db,'duels'),D.where('open','==',true)))).docs.map(d=>({id:d.id,...d.data()}));st.L=L;
+ $('#main').innerHTML=`<div class="box"><b>Criar desafio</b><br><small>Cara ou coroa: quem ganhar leva tudo.</small><div class="row"><input id="da" type="number" value="100"><button class="b" onclick="dNew()">Desafiar</button></div></div>`+L.map((d,j)=>`<div class="box">${d.by} apostou ${f(d.a)}<div class="row">${d.byId==S.id?`<button class="b" onclick="dAct(${j},0)">Cancelar</button>`:`<button class="b" onclick="dAct(${j},1)">Aceitar ⚔️</button>`}</div></div>`).join('')}
+async function dNew(){const a=Math.floor(+$('#da').value);if(!(a>=1)||a>S.bal)return msg('Valor inválido.');await add(-a);await F.d.addDoc(F.d.collection(F.db,'duels'),{by:S.name,byId:S.id,a,open:true});duels()}
+async function dAct(j,acc){const d=st.L[j],r=F.d.doc(F.db,'duels',d.id);
+ if(!acc){await F.d.deleteDoc(r);await add(d.a);return duels()}
+ if(d.a>S.bal)return msg('Saldo insuficiente.');
+ const x=await F.d.getDoc(r);if(!x.exists())return duels();
+ await add(-d.a);const win=R()<.5;await F.d.deleteDoc(r);
+ if(win)await add(2*d.a);else await F.d.updateDoc(F.d.doc(F.db,'users',d.byId),{bal:F.d.increment(2*d.a)});
+ msg(win?'🎉 Você ganhou '+f(d.a)+'!':'😬 Você perdeu '+f(d.a)+' pro '+d.by);duels()}
+
+/* ---------- RANKING ---------- */
+async function rank(){let L;if(F.db)L=(await F.d.getDocs(F.d.query(F.d.collection(F.db,'users'),F.d.orderBy('bal','desc'),F.d.limit(20)))).docs.map(d=>d.data());else L=Object.entries(JSON.parse(localStorage.casa||'{}')).map(([name,u])=>({name,bal:u.bal})).sort((a,b)=>b.bal-a.bal);
+ $('#main').innerHTML=L.map((u,i)=>`<div class="box">${['🥇','🥈','🥉'][i]||(i+1)+'º'} ${u.name}<b style="float:right">${f(u.bal)}</b></div>`).join('')}
+
+/* ---------- INÍCIO ---------- */
+(async()=>{
+ if(CFG){await initFB();F.u.onAuthStateChanged(F.auth,async u=>{if(u){const s=await F.d.getDoc(F.d.doc(F.db,'users',u.uid));if(s.exists())start(u.uid,s.data())}else{S=null;authView()}})}
+ else{const n=sessionStorage.u,U=JSON.parse(localStorage.casa||'{}');if(n&&U[n])start(n,{name:n,bal:U[n].bal});else authView()}
+})();
+</script></body></html>
